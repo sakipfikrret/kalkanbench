@@ -118,5 +118,5 @@ class TestAgentDescribeConfigContract:
         assert cfg["model_id"] == "qwen2.5-coder:7b"
         assert cfg["endpoint"] == "http://127.0.0.1:11434"
         assert cfg["temperature"] == 0.0
-        assert cfg["prompt_template_version"] == "1.1"
+        assert cfg["prompt_template_version"] == "1.2"
         assert "prompt_template_hash" in cfg

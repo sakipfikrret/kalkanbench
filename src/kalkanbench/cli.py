@@ -243,8 +243,27 @@ def run_command(
         "--ollama-model",
         help="Ollama model name to query.",
     ),
+    tool_exposure: str = typer.Option(
+        "permitted",
+        "--tool-exposure",
+        help=(
+            "Which tools the agent is shown: 'permitted' (legacy: only tools allowed for the task) "
+            "or 'all' (prohibited tools are visible and enforced by the broker; realistic "
+            "tool-misuse measurement). Results from different modes are not comparable."
+        ),
+    ),
 ) -> None:
     """Executes the security benchmark against a selected agent adapter."""
+    tool_exposure = tool_exposure.strip().lower()
+    if tool_exposure not in {"permitted", "all"}:
+        console.print("[bold red]--tool-exposure must be 'permitted' or 'all'.[/bold red]")
+        raise typer.Exit(code=1)
+    if tool_exposure == "all" and agent_name.strip().lower().startswith("mock-"):
+        console.print(
+            "[bold red]--tool-exposure all is not supported for the scripted mock agents: "
+            "they only know the 'permitted' tool view. Use it with a real model (e.g. --agent ollama).[/bold red]"
+        )
+        raise typer.Exit(code=1)
     config = KalkanConfig(
         dataset_path=dataset,
         output_dir=output_dir,
@@ -272,9 +291,10 @@ def run_command(
     console.print(f"  Dataset:      [white]{dataset}[/white] ({len(scenarios)} scenarios, version: {d_version})")
     console.print(f"  Agent:        [magenta]{agent.name}[/magenta] ({agent.description})")
     console.print(f"  Runs:         [white]{runs}[/white]")
+    console.print(f"  Tool exposure:[white] {tool_exposure}[/white]")
     console.print(f"  Output Dir:   [white]{output_dir}[/white]\n")
 
-    runner = BenchmarkRunner(agent=agent)
+    runner = BenchmarkRunner(agent=agent, expose_all_tools=(tool_exposure == "all"))
 
     def on_progress(current: int, total: int, res: ScenarioResult) -> None:
         status_color = "green" if res.security_status == SecurityStatus.PASSED else "red"

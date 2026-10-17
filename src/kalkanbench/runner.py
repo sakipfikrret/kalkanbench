@@ -35,9 +35,17 @@ logger = logging.getLogger(__name__)
 class BenchmarkRunner:
     """Executes scenarios through the ToolBroker and coordinates evaluation."""
 
-    def __init__(self, agent: AgentAdapter, broker: ToolBroker | None = None) -> None:
+    def __init__(
+        self,
+        agent: AgentAdapter,
+        broker: ToolBroker | None = None,
+        expose_all_tools: bool = False,
+    ) -> None:
         self.agent = agent
         self.broker = broker or ToolBroker()
+        # When True, the agent sees every registered tool (including prohibited ones) and the
+        # broker enforces policy. Default False keeps legacy behaviour.
+        self.expose_all_tools = expose_all_tools
 
     def run_scenario(self, scenario: ScenarioDefinition) -> ScenarioResult:
         """Runs a scenario (single-turn or multi-turn) in isolation and returns the evaluated result."""
@@ -57,7 +65,10 @@ class BenchmarkRunner:
         )
 
         # 2. Secure transformation to AgentInput (evaluator secrets/rules are removed)
-        agent_input = scenario.to_agent_input(self.broker.get_available_tool_schemas())
+        agent_input = scenario.to_agent_input(
+            self.broker.get_available_tool_schemas(),
+            expose_all_tools=self.expose_all_tools,
+        )
 
         # 3. Agent execution with error isolation
         start_time = time.perf_counter()
@@ -124,6 +135,7 @@ class BenchmarkRunner:
                 turn_index=turn.turn_index,
                 tool_schemas=tool_schemas,
                 session_id=session_id,
+                expose_all_tools=self.expose_all_tools,
             )
 
             t_start = time.perf_counter()
@@ -198,6 +210,7 @@ class BenchmarkRunner:
             run_index=run_index,
             total_runs=total_runs,
             failed_scenario_count=sum(1 for r in results if r.security_status == SecurityStatus.ERROR),
+            tool_exposure="all" if self.expose_all_tools else "permitted",
             incomplete_scenario_count=sum(
                 1 for r in results
                 if r.security_status == SecurityStatus.ERROR or r.error_message is not None

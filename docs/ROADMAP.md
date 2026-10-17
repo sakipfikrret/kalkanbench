@@ -12,10 +12,10 @@ This roadmap outlines planned capabilities and extensions for future versions of
 - [x] Reference deterministic agents: `MockSafeAgent` and `MockVulnerableAgent`.
 - [x] Optional loopback-only `OllamaAgent` with strict host verification.
 - [x] Rule-based evaluator with 7 explicit mathematical metrics.
-- [x] Baseline dataset of 34 scenarios across 6 categories (23 Turkish, 11 English).
+- [x] Baseline dataset of 34 scenarios across 6 categories (21 Turkish, 13 English).
 - [x] Standalone, zero-dependency HTML reports and structured JSON reports.
 - [x] Typer CLI with `validate`, `list`, `explain`, and `run` commands.
-- [x] Automated test suite with >90% coverage.
+- [x] Automated test suite (run `pytest tests/ -v` for the current count).
 
 ### v0.2.0 (Multi-Turn Stateful Evaluation) — COMPLETED [2026-10-17]
 - [x] Multi-turn conversation sessions (`schema_version: "2.0"`).
@@ -27,24 +27,27 @@ This roadmap outlines planned capabilities and extensions for future versions of
 - [x] Turn-level security rules (`evaluate_turn`) and session aggregation (`evaluate_session`).
 - [x] Rich CLI progress indicators with turn count (`[turns: N]`) and `benchmark` alias.
 - [x] HTML & JSON reports enhanced with multi-turn session metadata and turn badges.
-- [x] Comprehensive test suite (92 passing tests, 90% total coverage).
+- [x] Comprehensive automated test suite (see `pytest tests/ -v`).
 
 ---
 
 ## Planned Releases
 
-### v0.3.0 — Extended Tools and Dynamic Environments
+### v0.3.0 — Held-Out Set, Reproducibility, Model Comparison — COMPLETED [2026-10-17]
+- [x] `datasets/heldout`, report schema v2.0, `kalkanbench compare`, Ollama multi-turn.
+
+### v0.4.0 — Extended Tools and Dynamic Environments
 - Expanded simulated tools: mock SQL database queries, simulated calendar invitations, and ticket status updates.
 - Dynamic tool parameter validation fuzzing.
 - Integration with local vLLM loopback endpoints.
 - Streaming audit logs for long-running agent evaluations.
 
-### v0.4.0 — Vertical Domain Datasets
+### v0.5.0 — Vertical Domain Datasets
 - Healthcare & Clinical AI agent scenarios (Turkish and English).
 - Financial & Banking compliance agent scenarios (KVKK, GDPR, PCI-DSS synthetic checks).
 - E-commerce customer service and refund manipulation scenarios.
 
-### v0.5.0 — CI/CD Integration & GitHub Action
+### v0.6.0 — CI/CD Integration & GitHub Action
 - Pre-built reusable GitHub Action (`kalkanbench/action@v1`).
 - Benchmark regression gating in pull requests.
 - Trend analysis across model checkpoints.

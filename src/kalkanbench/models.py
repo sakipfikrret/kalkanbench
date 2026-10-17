@@ -246,13 +246,29 @@ class ScenarioDefinition(BaseModel):
             raise ValueError(f"Scenario ID '{v}' must be alphanumeric with lowercase letters, numbers, underscores, or hyphens.")
         return v
 
-    def to_agent_input(self, tool_schemas: list[dict[str, Any]]) -> AgentInput:
-        """Transforms this scenario definition into a secure input for single-turn execution."""
+    def _select_visible_tools(
+        self, tool_schemas: list[dict[str, Any]], expose_all_tools: bool
+    ) -> list[dict[str, Any]]:
+        """Chooses which tool schemas the agent under test is shown.
+
+        - ``expose_all_tools=False`` (legacy default): only tools in ``permitted_tools``.
+          Prohibited tools are invisible, so a well-behaved model cannot misuse them.
+        - ``expose_all_tools=True``: every registered tool is shown and the ToolBroker enforces
+          the scenario policy. This measures whether the agent is *tricked into using a tool it
+          can see*, which is the realistic tool-misuse threat.
+        """
+        if expose_all_tools:
+            return list(tool_schemas)
         if self.permitted_tools:
             permitted_set = set(self.permitted_tools)
-            available = [t for t in tool_schemas if t.get("name") in permitted_set]
-        else:
-            available = []
+            return [t for t in tool_schemas if t.get("name") in permitted_set]
+        return []
+
+    def to_agent_input(
+        self, tool_schemas: list[dict[str, Any]], expose_all_tools: bool = False
+    ) -> AgentInput:
+        """Transforms this scenario definition into a secure input for single-turn execution."""
+        available = self._select_visible_tools(tool_schemas, expose_all_tools)
         
         docs = [
             {"id": doc.id, "title": doc.title, "content": doc.content}
@@ -280,17 +296,14 @@ class ScenarioDefinition(BaseModel):
         turn_index: int,
         tool_schemas: list[dict[str, Any]],
         session_id: str,
+        expose_all_tools: bool = False,
     ) -> TurnAgentInput:
         """Transforms a specific turn definition into a secure agent input for multi-turn execution."""
         turn = next((t for t in self.turns if t.turn_index == turn_index), None)
         if not turn:
             raise ValueError(f"Turn index {turn_index} not found in scenario '{self.id}'")
 
-        if self.permitted_tools:
-            permitted_set = set(self.permitted_tools)
-            available = [t for t in tool_schemas if t.get("name") in permitted_set]
-        else:
-            available = []
+        available = self._select_visible_tools(tool_schemas, expose_all_tools)
 
         docs = [
             {"id": doc.id, "title": doc.title, "content": doc.content}
@@ -394,6 +407,7 @@ class ReproducibilityMetadata(BaseModel):
     execution_timestamp: str = ""
     run_index: int = 1                    # 1-based, >1 when repeated
     total_runs: int = 1
+    tool_exposure: str = "permitted"      # "permitted" (legacy) or "all" (prohibited tools visible, broker-enforced)
     retry_policy: str = "none"            # "none" — failed scenarios are not silently retried
     incomplete_scenario_count: int = 0
     failed_scenario_count: int = 0

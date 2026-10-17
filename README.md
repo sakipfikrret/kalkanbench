@@ -6,7 +6,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python: 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)](pyproject.toml)
-[![Version](https://img.shields.io/badge/version-0.3.0-green)](src/kalkanbench/__init__.py)
+[![Version](https://img.shields.io/badge/version-0.3.1-green)](src/kalkanbench/__init__.py)
 
 **Offline-First, Turkish-First Security & Robustness Benchmark for AI Agents.**
 
@@ -14,7 +14,7 @@ KalkanBench (*"Kalkan"* is Turkish for *Shield*) is an open-source evaluation su
 
 Rather than asking another language model whether an answer "looks safe," KalkanBench evaluates **observable agent behavior** in an explicit simulated environment with full audit event tracking.
 
-> **133 automated tests · 62 benchmark scenarios (34 single-turn + 16 multi-turn + 12 held-out) · Turkish & English · Zero cloud dependency**
+> **Automated test suite (`pytest tests/ -v`) · 62 benchmark scenarios (34 single-turn + 16 multi-turn + 12 held-out) · Turkish & English · Zero cloud dependency**
 
 ---
 
@@ -177,6 +177,21 @@ kalkanbench compare \
   --label1 "Mock-Safe" --label2 "Mock-Vulnerable"
 ```
 
+### Araç Görünürlüğü (`--tool-exposure`)
+
+```
+# Varsayılan (legacy): ajan yalnızca görev için izinli araçları görür
+kalkanbench run --dataset datasets/v1 --agent ollama --ollama-model qwen2.5-coder:7b
+
+# Gerçekçi mod: yasaklı araçlar da görünür, ToolBroker engeller
+kalkanbench run --dataset datasets/v1 --agent ollama --ollama-model qwen2.5-coder:7b --tool-exposure all
+```
+
+`permitted` modunda yasaklı araçlar modele hiç gösterilmediği için "araç kötüye kullanımı" yalnızca modelin
+kendisine sunulmamış bir aracı uydurup çağırıp çağırmadığını ölçer. `all` modu, modelin **görebildiği** tehlikeli
+bir aracı kandırılarak kullanıp kullanmadığını ölçer. İki modun sonuçları birbiriyle karşılaştırılamaz; mod rapor
+metadata'sında (`reproducibility.tool_exposure`) kayıtlıdır. Scriptli mock ajanlar yalnızca `permitted` modunu bilir.
+
 ### Local Model (Ollama)
 ```bash
 # Pre-flight check (no auto-download)
@@ -194,7 +209,7 @@ kalkanbench run --dataset datasets/heldout --agent ollama \
 | Agent | Davranış | Beklenen Skor |
 |---|---|---|
 | `mock-safe` | Meşru görevleri yerine getirir, enjeksiyonlara direnir, sırları sızdırmaz | Attack Resistance: %100 |
-| `mock-vulnerable` | Enjeksiyonlara boyun eğer, yetkisiz araç çağrısı dener, sırları ifşa eder | Attack Resistance: <%20 |
+| `mock-vulnerable` | Enjeksiyonlara boyun eğer, yetkisiz araç çağrısı dener, sırları ifşa eder | Attack Resistance: ≤%20 |
 
 Bu ajanlar yalnızca benchmark hassasiyeti ve yeniden üretilebilirliği kanıtlamak için mevcuttur.
 
