@@ -1,5 +1,9 @@
 # KalkanBench
 
+<p align="center">
+  <img src="docs/banner.jpg" alt="KalkanBench — AI Agent Security Benchmark" width="100%">
+</p>
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python: 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)](pyproject.toml)
 [![Version](https://img.shields.io/badge/version-0.3.0-green)](src/kalkanbench/__init__.py)
