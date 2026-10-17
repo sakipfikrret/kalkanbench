@@ -10,17 +10,20 @@ from pathlib import Path
 from typing import Callable
 
 from kalkanbench.agents.base import AgentAdapter
-from kalkanbench.evaluator.rules import evaluate_scenario
+from kalkanbench.evaluator.rules import evaluate_scenario, evaluate_turn, evaluate_session
 from kalkanbench.evaluator.scoring import calculate_benchmark_metrics
 from kalkanbench.models import (
+    AgentMemory,
     AgentResult,
     BenchmarkReport,
+    ChatMessage,
     EvaluationFinding,
     EvaluationOutcome,
     ScenarioDefinition,
     ScenarioResult,
     SecurityStatus,
     Severity,
+    TurnResult,
 )
 from kalkanbench.sandbox.broker import ToolBroker
 
@@ -35,7 +38,13 @@ class BenchmarkRunner:
         self.broker = broker or ToolBroker()
 
     def run_scenario(self, scenario: ScenarioDefinition) -> ScenarioResult:
-        """Runs a single scenario in isolation and returns the evaluated result."""
+        """Runs a scenario (single-turn or multi-turn) in isolation and returns the evaluated result."""
+        if scenario.is_multi_turn:
+            return self.run_multi_turn_scenario(scenario)
+        return self.run_single_turn_scenario(scenario)
+
+    def run_single_turn_scenario(self, scenario: ScenarioDefinition) -> ScenarioResult:
+        """Runs a single-turn scenario in isolation and returns the evaluated result."""
         # 1. Deterministic sandbox reset with scenario fixtures
         self.broker.reset_for_scenario(
             scenario_id=scenario.id,
@@ -86,6 +95,73 @@ class BenchmarkRunner:
         # 5. Evaluate results against observable evidence and scenario assertions
         return evaluate_scenario(scenario, agent_result, audit_events)
 
+    def run_multi_turn_scenario(self, scenario: ScenarioDefinition) -> ScenarioResult:
+        """Executes a stateful multi-turn conversation session with turn-level and session-level evaluation."""
+        session_id = f"sess_{uuid.uuid4().hex[:12]}"
+
+        # 1. Deterministic sandbox reset
+        self.broker.reset_for_scenario(
+            scenario_id=scenario.id,
+            permitted_tools=scenario.permitted_tools,
+            prohibited_tools=scenario.prohibited_tools,
+            initial_documents=scenario.initial_documents,
+            initial_secrets=scenario.initial_secrets,
+        )
+
+        history: list[ChatMessage] = []
+        memory = AgentMemory()
+        turn_results: list[TurnResult] = []
+
+        if scenario.system_instruction:
+            history.append(ChatMessage(role="system", content=scenario.system_instruction))
+
+        for turn in scenario.turns:
+            self.broker.set_turn_context(turn_index=turn.turn_index, session_id=session_id)
+            tool_schemas = self.broker.get_available_tool_schemas()
+            turn_input = scenario.to_turn_agent_input(
+                turn_index=turn.turn_index,
+                tool_schemas=tool_schemas,
+                session_id=session_id,
+            )
+
+            history.append(ChatMessage(role="user", content=turn.user_input))
+
+            t_start = time.perf_counter()
+            try:
+                agent_result = self.agent.run_turn(turn_input, history, memory, self.broker)
+            except Exception as e:
+                t_elapsed = (time.perf_counter() - t_start) * 1000.0
+                logger.error(f"Turn {turn.turn_index} crashed in scenario '{scenario.id}': {e}", exc_info=True)
+                agent_result = AgentResult(
+                    scenario_id=scenario.id,
+                    response_text=f"ERROR: {e}",
+                    execution_time_ms=t_elapsed,
+                    metadata={"error": str(e)},
+                )
+
+            # Record assistant response in conversation history
+            history.append(ChatMessage(role="assistant", content=agent_result.response_text))
+
+            # Turn-scoped audit events
+            turn_audit_events = [
+                ev for ev in self.broker.get_audit_events()
+                if ev.turn_index == turn.turn_index
+            ]
+
+            turn_eval = evaluate_turn(scenario, turn, agent_result, turn_audit_events)
+            turn_results.append(turn_eval)
+
+        # 2. Cumulative session-level evaluation
+        all_audit_events = self.broker.get_audit_events()
+        return evaluate_session(
+            scenario=scenario,
+            turn_results=turn_results,
+            session_audit_events=all_audit_events,
+            session_id=session_id,
+            history=history,
+            memory=memory,
+        )
+
     def run_benchmark(
         self,
         scenarios: list[ScenarioDefinition],
@@ -106,7 +182,7 @@ class BenchmarkRunner:
         now_utc = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
         return BenchmarkReport(
-            benchmark_version="0.1.0",
+            benchmark_version="0.2.0",
             report_id=str(uuid.uuid4()),
             timestamp=now_utc,
             dataset_path=dataset_path,

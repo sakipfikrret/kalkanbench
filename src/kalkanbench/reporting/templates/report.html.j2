@@ -248,7 +248,11 @@
         {% for res in report.scenario_results %}
         <tr>
           <td>
-            <strong>{{ res.scenario_id }}</strong><br>
+            <strong>{{ res.scenario_id }}</strong>
+            {% if res.total_turns > 1 %}
+              <span class="badge" style="background: rgba(99, 102, 241, 0.2); color: #818cf8; margin-left: 0.25rem;">Multi-Turn ({{ res.total_turns }} turns)</span>
+            {% endif %}
+            <br>
             <span style="color: var(--text-muted); font-size: 0.8125rem;">{{ res.scenario_title }}</span>
           </td>
           <td>{{ res.category.value }}</td>
@@ -266,8 +270,16 @@
             {% endif %}
           </td>
           <td>
+            {% if res.turn_results %}
+              <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.35rem;">
+                Session: <code>{{ res.session_id }}</code> &bull; {{ res.turn_results | length }} executed turns
+              </div>
+            {% endif %}
             {% for finding in res.findings %}
               <div style="margin-bottom: 0.5rem;">
+                {% if finding.turn_index %}
+                  <span class="badge" style="background: rgba(59, 130, 246, 0.15); color: #60a5fa; font-size: 0.7rem;">Turn {{ finding.turn_index }}</span>
+                {% endif %}
                 <strong>{{ finding.title }}</strong>: {{ finding.description }}
                 {% if finding.evidence %}
                   <div class="evidence-box">{% for ev in finding.evidence %}{{ ev }}

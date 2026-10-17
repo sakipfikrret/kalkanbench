@@ -89,9 +89,11 @@ def validate_command(
     table.add_column("Lang", style="magenta")
     table.add_column("Category", style="yellow")
     table.add_column("Severity", style="red")
+    table.add_column("Turns", justify="right", style="cyan")
 
     for s in scenarios:
-        table.add_row(s.id, s.title, s.language.value.upper(), s.category.value, s.severity.value)
+        turns_count = str(len(s.turns)) if s.is_multi_turn else "1"
+        table.add_row(s.id, s.title, s.language.value.upper(), s.category.value, s.severity.value, turns_count)
 
     console.print(table)
     console.print(f"[bold green][OK] All {len(scenarios)} scenarios passed schema validation.[/bold green]")
@@ -121,9 +123,11 @@ def list_command(
     table.add_column("Lang", style="magenta")
     table.add_column("Category", style="yellow")
     table.add_column("Severity", style="bold red")
+    table.add_column("Turns", justify="right", style="cyan")
 
     for idx, s in enumerate(scenarios, 1):
-        table.add_row(str(idx), s.id, s.title, s.language.value.upper(), s.category.value, s.severity.value)
+        turns_count = str(len(s.turns)) if s.is_multi_turn else "1"
+        table.add_row(str(idx), s.id, s.title, s.language.value.upper(), s.category.value, s.severity.value, turns_count)
 
     console.print(table)
 
@@ -157,12 +161,26 @@ def explain_command(
     console.print(f"[bold red]Severity:[/bold red] {match.severity.value}")
     console.print(f"[bold dim]Description:[/bold dim] {match.description}\n")
 
-    console.print("[bold green]Legitimate Task:[/bold green]")
-    console.print(f"  {match.legitimate_task}\n")
+    if match.is_multi_turn:
+        console.print(f"[bold blue]Multi-Turn Session Specification ({len(match.turns)} turns):[/bold blue]")
+        for t in match.turns:
+            console.print(f"  [cyan]Turn {t.turn_index}:[/cyan] {t.user_input}")
+            if t.untrusted_content:
+                console.print(f"    [red]Untrusted content:[/red] {t.untrusted_content}")
+            if t.intermediate_task_outputs:
+                console.print(f"    [green]Required outputs:[/green] {t.intermediate_task_outputs}")
+            if t.prohibited_tools:
+                console.print(f"    [red]Prohibited tools:[/red] {t.prohibited_tools}")
+            if t.prohibited_patterns:
+                console.print(f"    [red]Prohibited patterns:[/red] {t.prohibited_patterns}")
+        console.print("")
+    else:
+        console.print("[bold green]Legitimate Task:[/bold green]")
+        console.print(f"  {match.legitimate_task}\n")
 
-    if match.untrusted_content:
-        console.print("[bold red]Untrusted Adversarial Content:[/bold red]")
-        console.print(f"  {match.untrusted_content}\n")
+        if match.untrusted_content:
+            console.print("[bold red]Untrusted Adversarial Content:[/bold red]")
+            console.print(f"  {match.untrusted_content}\n")
 
     console.print("[bold blue]Security Rules & Assertions (Evaluator Only):[/bold blue]")
     console.print(f"  Permitted Tools:   {match.permitted_tools or 'None (or all safe tools)'}")
@@ -246,10 +264,12 @@ def run_command(
     def on_progress(current: int, total: int, res: ScenarioResult) -> None:
         status_color = "green" if res.security_status == SecurityStatus.PASSED else "red"
         symbol = "+" if res.security_status == SecurityStatus.PASSED else "x"
+        turns_tag = f" [dim][{res.total_turns} turns][/dim]" if res.total_turns > 1 else ""
         console.print(
             f"[{current:02d}/{total:02d}] "
             f"[{status_color}][{symbol}] {res.security_status.value.upper():<7}[/{status_color}] "
-            f"[cyan]{res.scenario_id:<36}[/cyan] "
+            f"[cyan]{res.scenario_id:<36}[/cyan]"
+            f"{turns_tag} "
             f"[dim]({res.category.value})[/dim]"
         )
 
@@ -278,6 +298,10 @@ def run_command(
     if fail_on_breach and (m.attack_resistance_rate < 100.0 or m.simulated_harmful_action_success_rate > 0.0):
         console.print("[bold red]Benchmark gate failed (--fail-on-breach enabled).[/bold red]")
         raise typer.Exit(code=2)
+
+
+# Register benchmark as alias for run
+app.command("benchmark")(run_command)
 
 
 if __name__ == "__main__":

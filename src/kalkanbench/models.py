@@ -100,6 +100,8 @@ class AuditEvent(BaseModel):
     event_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     sequence: int
     scenario_id: str
+    session_id: str | None = None
+    turn_index: int | None = None
     timestamp: str
     tool_name: str
     requested_arguments: dict[str, Any] = Field(default_factory=dict)
@@ -132,11 +134,84 @@ class AgentResult(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class ChatMessage(BaseModel):
+    """A message in a multi-turn conversation session."""
+    role: str  # "system", "user", "assistant", "tool"
+    content: str
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class AgentMemory(BaseModel):
+    """Simulated, session-scoped key-value memory store for agent state."""
+    entries: dict[str, str] = Field(default_factory=dict)
+    audit_log: list[dict[str, Any]] = Field(default_factory=list)
+
+    def set(self, key: str, value: str, source: str = "agent") -> None:
+        self.entries[key] = value
+        self.audit_log.append({
+            "action": "set",
+            "key": key,
+            "value": value,
+            "source": source,
+        })
+
+    def get(self, key: str, default: str | None = None) -> str | None:
+        val = self.entries.get(key, default)
+        self.audit_log.append({
+            "action": "get",
+            "key": key,
+            "hit": key in self.entries,
+        })
+        return val
+
+    def clear(self) -> None:
+        self.entries.clear()
+        self.audit_log.append({"action": "clear"})
+
+    def snapshot(self) -> dict[str, str]:
+        return dict(self.entries)
+
+
+class TurnDefinition(BaseModel):
+    """Definition of an individual turn within a multi-turn scenario."""
+    turn_index: int
+    user_input: str
+    untrusted_content: str | None = None
+    intermediate_task_outputs: list[str] = Field(default_factory=list)
+    prohibited_patterns: list[str] = Field(default_factory=list)
+    prohibited_tools: list[str] = Field(default_factory=list)
+    refusal_keywords: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class TurnAgentInput(BaseModel):
+    """Filtered agent-visible input for a specific turn in a multi-turn session."""
+    scenario_id: str
+    session_id: str
+    turn_index: int
+    user_input: str
+    untrusted_content: str | None = None
+    available_tools: list[dict[str, Any]] = Field(default_factory=list)
+    context_documents: list[dict[str, str]] = Field(default_factory=list)
+
+
+class TurnResult(BaseModel):
+    """Evaluation result for an individual turn in a multi-turn session."""
+    turn_index: int
+    user_input: str
+    response_text: str
+    tool_calls: list[ToolCall] = Field(default_factory=list)
+    execution_time_ms: float = 0.0
+    findings: list[EvaluationFinding] = Field(default_factory=list)
+    status: SecurityStatus = SecurityStatus.PASSED
+    legitimate_task_success: bool = True
+    false_refusal: bool = False
+
+
 class ScenarioDefinition(BaseModel):
     """Full scenario specification loaded from dataset YAML.
     
-    Contains both the untrusted task information and the evaluator-only
-    security assertions and constraints.
+    Supports both v1 single-turn and v2 multi-turn specifications.
     """
     id: str
     title: str
@@ -144,8 +219,11 @@ class ScenarioDefinition(BaseModel):
     category: ScenarioCategory
     severity: Severity = Severity.MEDIUM
     description: str
-    legitimate_task: str
+    schema_version: str = "1.0"
+    legitimate_task: str = ""
     untrusted_content: str | None = None
+    system_instruction: str = ""
+    turns: list[TurnDefinition] = Field(default_factory=list)
     permitted_tools: list[str] = Field(default_factory=list)
     prohibited_tools: list[str] = Field(default_factory=list)
     prohibited_patterns: list[str] = Field(default_factory=list)
@@ -156,6 +234,11 @@ class ScenarioDefinition(BaseModel):
     tags: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
+    @property
+    def is_multi_turn(self) -> bool:
+        """True if the scenario defines multiple ordered turns."""
+        return len(self.turns) > 0
+
     @field_validator("id")
     @classmethod
     def validate_id_format(cls, v: str) -> str:
@@ -164,17 +247,11 @@ class ScenarioDefinition(BaseModel):
         return v
 
     def to_agent_input(self, tool_schemas: list[dict[str, Any]]) -> AgentInput:
-        """Transforms this scenario definition into a secure input for the agent.
-        
-        Evaluator-only fields (prohibitions, assertions, secrets) are completely omitted.
-        """
-        # Filter tool schemas to only those in the allowlist.
-        # permitted_tools is always list[str]; empty list means deny-all.
+        """Transforms this scenario definition into a secure input for single-turn execution."""
         if self.permitted_tools:
             permitted_set = set(self.permitted_tools)
             available = [t for t in tool_schemas if t.get("name") in permitted_set]
         else:
-            # Empty list: this scenario requires no tool access — expose nothing.
             available = []
         
         docs = [
@@ -182,10 +259,50 @@ class ScenarioDefinition(BaseModel):
             for doc in self.initial_documents
         ]
 
+        task = self.legitimate_task
+        if not task and self.turns:
+            task = self.turns[0].user_input
+
+        untrusted = self.untrusted_content
+        if untrusted is None and self.turns:
+            untrusted = self.turns[0].untrusted_content
+
         return AgentInput(
             scenario_id=self.id,
-            task=self.legitimate_task,
-            untrusted_content=self.untrusted_content,
+            task=task,
+            untrusted_content=untrusted,
+            available_tools=available,
+            context_documents=docs,
+        )
+
+    def to_turn_agent_input(
+        self,
+        turn_index: int,
+        tool_schemas: list[dict[str, Any]],
+        session_id: str,
+    ) -> TurnAgentInput:
+        """Transforms a specific turn definition into a secure agent input for multi-turn execution."""
+        turn = next((t for t in self.turns if t.turn_index == turn_index), None)
+        if not turn:
+            raise ValueError(f"Turn index {turn_index} not found in scenario '{self.id}'")
+
+        if self.permitted_tools:
+            permitted_set = set(self.permitted_tools)
+            available = [t for t in tool_schemas if t.get("name") in permitted_set]
+        else:
+            available = []
+
+        docs = [
+            {"id": doc.id, "title": doc.title, "content": doc.content}
+            for doc in self.initial_documents
+        ]
+
+        return TurnAgentInput(
+            scenario_id=self.id,
+            session_id=session_id,
+            turn_index=turn_index,
+            user_input=turn.user_input,
+            untrusted_content=turn.untrusted_content,
             available_tools=available,
             context_documents=docs,
         )
@@ -201,10 +318,11 @@ class EvaluationFinding(BaseModel):
     description: str
     evidence: list[str] = Field(default_factory=list)
     blocked: bool = False
+    turn_index: int | None = None
 
 
 class ScenarioResult(BaseModel):
-    """Complete evaluation outcome for an individual scenario."""
+    """Complete evaluation outcome for an individual scenario (single-turn or multi-turn session)."""
     scenario_id: str
     scenario_title: str
     category: ScenarioCategory
@@ -213,6 +331,10 @@ class ScenarioResult(BaseModel):
     security_status: SecurityStatus
     legitimate_task_success: bool
     false_refusal: bool
+    scenario_type: str = "single_turn"  # "single_turn" or "multi_turn"
+    session_id: str | None = None
+    total_turns: int = 1
+    turn_results: list[TurnResult] = Field(default_factory=list)
     findings: list[EvaluationFinding] = Field(default_factory=list)
     audit_events: list[AuditEvent] = Field(default_factory=list)
     agent_response: str = ""
@@ -236,6 +358,10 @@ class BenchmarkMetrics(BaseModel):
     benign_false_refusal_rate: float
     scenario_failure_rate: float
     severity_weighted_score: float
+    
+    # Dual-Goal Robustness metrics (utility under attack)
+    task_completion_under_attack_rate: float = 0.0
+    safe_task_completion_rate: float = 0.0
     
     category_metrics: dict[str, dict[str, Any]] = Field(default_factory=dict)
     language_metrics: dict[str, dict[str, Any]] = Field(default_factory=dict)

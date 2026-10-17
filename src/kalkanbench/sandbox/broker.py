@@ -23,13 +23,22 @@ class ToolBroker:
 
     def __init__(self) -> None:
         self.scenario_id: str = "uninitialized"
+        self.session_id: str | None = None
+        self.turn_index: int | None = None
         self.permitted_tools: set[str] = set()
         self.prohibited_tools: set[str] = set()
         self.documents: dict[str, Document] = {}
         self.secrets: dict[str, SyntheticSecret] = {}
         self.sent_messages: list[dict[str, Any]] = []
         self.external_transfers: list[dict[str, Any]] = []
+        self._permitted_tools_active: bool = False
         self.audit_trail: AuditTrail = AuditTrail()
+
+    def set_turn_context(self, turn_index: int, session_id: str | None = None) -> None:
+        """Sets active turn index and session ID for audit logging."""
+        self.turn_index = turn_index
+        if session_id is not None:
+            self.session_id = session_id
 
     def reset_for_scenario(
         self,
@@ -41,6 +50,8 @@ class ToolBroker:
     ) -> None:
         """Deterministically resets all internal state and loads scenario fixtures."""
         self.scenario_id = scenario_id
+        self.session_id = None
+        self.turn_index = None
         # None means "no allowlist" (any registered tool may be used).
         # An empty list means "deny-all" — nothing is permitted.
         self._permitted_tools_active = permitted_tools is not None
@@ -51,6 +62,29 @@ class ToolBroker:
         self.sent_messages.clear()
         self.external_transfers.clear()
         self.audit_trail.clear()
+
+    def _record_event(
+        self,
+        tool_name: str,
+        arguments: dict[str, Any],
+        permitted: bool,
+        executed: bool,
+        blocked: bool,
+        reason: str,
+        observable_state: dict[str, Any] | None = None,
+    ) -> AuditEvent:
+        return self.audit_trail.record_event(
+            scenario_id=self.scenario_id,
+            tool_name=tool_name,
+            arguments=arguments,
+            permitted=permitted,
+            executed=executed,
+            blocked=blocked,
+            reason=reason,
+            observable_state=observable_state,
+            session_id=self.session_id,
+            turn_index=self.turn_index,
+        )
 
     def get_available_tool_schemas(self) -> list[dict[str, Any]]:
         """Returns schemas of all registered tools."""
@@ -63,8 +97,7 @@ class ToolBroker:
 
         # 1. Check if tool is recognized
         if tool_name not in TOOL_REGISTRY:
-            event = self.audit_trail.record_event(
-                scenario_id=self.scenario_id,
+            event = self._record_event(
                 tool_name=tool_name,
                 arguments=args,
                 permitted=False,
@@ -83,8 +116,7 @@ class ToolBroker:
 
         # 2. Check explicit prohibition
         if tool_name in self.prohibited_tools:
-            event = self.audit_trail.record_event(
-                scenario_id=self.scenario_id,
+            event = self._record_event(
                 tool_name=tool_name,
                 arguments=args,
                 permitted=False,
@@ -104,8 +136,7 @@ class ToolBroker:
         # 3. Check permitted list if defined.
         # An active (non-None) allowlist with an empty set means deny-all.
         if self._permitted_tools_active and tool_name not in self.permitted_tools:
-            event = self.audit_trail.record_event(
-                scenario_id=self.scenario_id,
+            event = self._record_event(
                 tool_name=tool_name,
                 arguments=args,
                 permitted=False,
@@ -126,8 +157,7 @@ class ToolBroker:
         try:
             validated_args = validate_tool_args(tool_name, args)
         except Exception as e:
-            event = self.audit_trail.record_event(
-                scenario_id=self.scenario_id,
+            event = self._record_event(
                 tool_name=tool_name,
                 arguments=args,
                 permitted=True,
@@ -148,8 +178,7 @@ class ToolBroker:
         spec = TOOL_REGISTRY[tool_name]
         handler = getattr(self, spec.handler_name, None)
         if not handler:
-            event = self.audit_trail.record_event(
-                scenario_id=self.scenario_id,
+            event = self._record_event(
                 tool_name=tool_name,
                 arguments=args,
                 permitted=True,
@@ -168,8 +197,7 @@ class ToolBroker:
 
         try:
             output, state_diff = handler(validated_args)
-            event = self.audit_trail.record_event(
-                scenario_id=self.scenario_id,
+            event = self._record_event(
                 tool_name=tool_name,
                 arguments=args,
                 permitted=True,
@@ -186,8 +214,7 @@ class ToolBroker:
                 audit_id=event.event_id,
             )
         except Exception as e:
-            event = self.audit_trail.record_event(
-                scenario_id=self.scenario_id,
+            event = self._record_event(
                 tool_name=tool_name,
                 arguments=args,
                 permitted=True,

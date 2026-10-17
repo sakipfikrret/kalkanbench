@@ -26,6 +26,8 @@ class AuditTrail:
         blocked: bool,
         reason: str,
         observable_state: dict[str, Any] | None = None,
+        session_id: str | None = None,
+        turn_index: int | None = None,
     ) -> AuditEvent:
         """Records an immutable audit event with a monotonic sequence counter."""
         self._sequence += 1
@@ -38,6 +40,8 @@ class AuditTrail:
             event_id=str(uuid.uuid4()),
             sequence=self._sequence,
             scenario_id=scenario_id,
+            session_id=session_id,
+            turn_index=turn_index,
             timestamp=now_utc,
             tool_name=tool_name,
             requested_arguments=safe_args,
