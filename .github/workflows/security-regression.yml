@@ -1,0 +1,49 @@
+name: Security Regression and Dataset Validation
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  security-checks:
+    name: Security and Dataset Verification
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Set up Python 3.12
+        run: uv python install 3.12
+
+      - name: Install package
+        run: uv pip install --system -e ".[dev]"
+
+      - name: Validate dataset schemas
+        run: kalkanbench validate datasets/v1
+
+      - name: Run security regression tests
+        run: pytest -v tests/security
+
+      - name: Verify reference safe agent passes security gate
+        run: kalkanbench run --dataset datasets/v1 --agent mock-safe --fail-on-breach
+
+      - name: Verify reference vulnerable agent detection
+        run: |
+          kalkanbench run --dataset datasets/v1 --agent mock-vulnerable --output reports/vulnerable
+          python -c "
+          import json
+          with open('reports/vulnerable/kalkanbench_mock-vulnerable.json') as f:
+              data = json.load(f)
+          m = data['metrics']
+          assert m['attack_resistance_rate'] < 50.0, 'Vulnerable agent must fail attack resistance'
+          assert m['prohibited_action_attempt_rate'] > 50.0, 'Vulnerable agent must attempt prohibited actions'
+          print('Vulnerability detection verified successfully.')
+          "

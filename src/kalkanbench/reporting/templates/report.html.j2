@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KalkanBench Security Report - {{ report.agent_name }}</title>
+  <style>
+    :root {
+      --bg: #0b0f19;
+      --card-bg: #111827;
+      --card-border: #1f2937;
+      --text-main: #f9fafb;
+      --text-muted: #9ca3af;
+      --accent: #3b82f6;
+      --success: #10b981;
+      --danger: #ef4444;
+      --warning: #f59e0b;
+      --info: #6366f1;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background-color: var(--bg);
+      color: var(--text-main);
+      line-height: 1.5;
+      padding: 2rem;
+    }
+    .container { max-width: 1200px; margin: 0 auto; }
+    header {
+      border-bottom: 1px solid var(--card-border);
+      padding-bottom: 1.5rem;
+      margin-bottom: 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+    .brand h1 { font-size: 1.75rem; font-weight: 700; color: #fff; letter-spacing: -0.025em; }
+    .brand p { color: var(--text-muted); font-size: 0.875rem; margin-top: 0.25rem; }
+    .meta-box { font-size: 0.8125rem; color: var(--text-muted); text-align: right; }
+    .meta-box span { color: var(--text-main); font-weight: 600; }
+    
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin-bottom: 2rem; }
+    .card {
+      background-color: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 0.5rem;
+      padding: 1.25rem;
+    }
+    .card-title { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); font-weight: 600; margin-bottom: 0.5rem; }
+    .card-value { font-size: 2rem; font-weight: 700; }
+    .card-sub { font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem; }
+    
+    .val-pass { color: var(--success); }
+    .val-fail { color: var(--danger); }
+    .val-warn { color: var(--warning); }
+    .val-accent { color: var(--accent); }
+    
+    h2 { font-size: 1.25rem; font-weight: 600; margin: 2rem 0 1rem; color: #fff; }
+    
+    table { width: 100%; border-collapse: collapse; margin-bottom: 2rem; font-size: 0.875rem; }
+    th {
+      text-align: left;
+      padding: 0.75rem 1rem;
+      background-color: #1f2937;
+      color: var(--text-muted);
+      font-weight: 600;
+      border-bottom: 1px solid var(--card-border);
+    }
+    td { padding: 0.75rem 1rem; border-bottom: 1px solid var(--card-border); vertical-align: top; }
+    tr:hover { background-color: rgba(31, 41, 55, 0.4); }
+    
+    .badge {
+      display: inline-block;
+      padding: 0.2rem 0.5rem;
+      border-radius: 0.25rem;
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .badge-passed { background-color: rgba(16, 185, 129, 0.15); color: var(--success); border: 1px solid var(--success); }
+    .badge-failed { background-color: rgba(239, 68, 68, 0.15); color: var(--danger); border: 1px solid var(--danger); }
+    .badge-error { background-color: rgba(245, 158, 11, 0.15); color: var(--warning); border: 1px solid var(--warning); }
+    
+    .badge-sev-critical { background: rgba(239, 68, 68, 0.2); color: #f87171; }
+    .badge-sev-high { background: rgba(249, 115, 22, 0.2); color: #fb923c; }
+    .badge-sev-medium { background: rgba(234, 179, 8, 0.2); color: #fde047; }
+    .badge-sev-low { background: rgba(59, 130, 246, 0.2); color: #93c5fd; }
+    
+    .evidence-box {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.75rem;
+      background: #030712;
+      padding: 0.5rem;
+      border-radius: 0.25rem;
+      border: 1px solid #1f2937;
+      margin-top: 0.25rem;
+      white-space: pre-wrap;
+      word-break: break-all;
+      max-height: 160px;
+      overflow-y: auto;
+    }
+    
+    footer {
+      margin-top: 3rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid var(--card-border);
+      color: var(--text-muted);
+      font-size: 0.75rem;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="brand">
+        <h1>KalkanBench Security Assessment Report</h1>
+        <p>Offline-First Security &amp; Robustness Benchmark for AI Agents</p>
+      </div>
+      <div class="meta-box">
+        <div>Agent: <span>{{ report.agent_name }}</span> ({{ report.agent_type }})</div>
+        <div>Report ID: <span>{{ report.report_id }}</span></div>
+        <div>Timestamp: <span>{{ report.timestamp }}</span></div>
+        <div>Version: <span>v{{ report.benchmark_version }}</span></div>
+      </div>
+    </header>
+
+    <!-- Key Metrics Grid -->
+    <div class="grid">
+      <div class="card">
+        <div class="card-title">Attack Resistance Rate</div>
+        <div class="card-value {% if report.metrics.attack_resistance_rate >= 80 %}val-pass{% elif report.metrics.attack_resistance_rate >= 50 %}val-warn{% else %}val-fail{% endif %}">
+          {{ report.metrics.attack_resistance_rate }}%
+        </div>
+        <div class="card-sub">{{ report.metrics.attack_scenarios_count }} attack scenarios evaluated</div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Prohibited Attempt Rate</div>
+        <div class="card-value {% if report.metrics.prohibited_action_attempt_rate == 0 %}val-pass{% else %}val-fail{% endif %}">
+          {{ report.metrics.prohibited_action_attempt_rate }}%
+        </div>
+        <div class="card-sub">Blocked or executed unauthorized attempts</div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Harmful Action Success</div>
+        <div class="card-value {% if report.metrics.simulated_harmful_action_success_rate == 0 %}val-pass{% else %}val-fail{% endif %}">
+          {{ report.metrics.simulated_harmful_action_success_rate }}%
+        </div>
+        <div class="card-sub">Exploits successfully completed in simulation</div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Task Completion Rate</div>
+        <div class="card-value val-accent">{{ report.metrics.legitimate_task_completion_rate }}%</div>
+        <div class="card-sub">Legitimate task instructions fulfilled</div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Benign False Refusal</div>
+        <div class="card-value {% if report.metrics.benign_false_refusal_rate == 0 %}val-pass{% else %}val-warn{% endif %}">
+          {{ report.metrics.benign_false_refusal_rate }}%
+        </div>
+        <div class="card-sub">{{ report.metrics.benign_scenarios_count }} harmless scenarios tested</div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Weighted Security Score</div>
+        <div class="card-value {% if report.metrics.severity_weighted_score >= 80 %}val-pass{% else %}val-fail{% endif %}">
+          {{ report.metrics.severity_weighted_score }}
+        </div>
+        <div class="card-sub">Severity normalized score (0-100)</div>
+      </div>
+    </div>
+
+    <!-- Category Breakdown -->
+    <h2>Category Performance</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Category</th>
+          <th>Total</th>
+          <th>Passed</th>
+          <th>Failed</th>
+          <th>Errors</th>
+          <th>Pass Rate</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for cat_name, stats in report.metrics.category_metrics.items() %}
+        <tr>
+          <td><strong>{{ cat_name }}</strong></td>
+          <td>{{ stats.total }}</td>
+          <td class="val-pass">{{ stats.passed }}</td>
+          <td class="val-fail">{{ stats.failed }}</td>
+          <td>{{ stats.error }}</td>
+          <td><strong>{{ stats.pass_rate }}%</strong></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <!-- Language Breakdown -->
+    <h2>Language Performance</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Language</th>
+          <th>Total</th>
+          <th>Passed</th>
+          <th>Failed</th>
+          <th>Errors</th>
+          <th>Pass Rate</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for lang_code, stats in report.metrics.language_metrics.items() %}
+        <tr>
+          <td><strong>{{ lang_code | upper }}</strong></td>
+          <td>{{ stats.total }}</td>
+          <td class="val-pass">{{ stats.passed }}</td>
+          <td class="val-fail">{{ stats.failed }}</td>
+          <td>{{ stats.error }}</td>
+          <td><strong>{{ stats.pass_rate }}%</strong></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <!-- Detailed Scenario Results Table -->
+    <h2>Scenario Evaluations ({{ report.scenario_results | length }})</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>ID &amp; Title</th>
+          <th>Category</th>
+          <th>Severity</th>
+          <th>Status</th>
+          <th>Task Done</th>
+          <th>Evaluation Findings &amp; Evidence</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for res in report.scenario_results %}
+        <tr>
+          <td>
+            <strong>{{ res.scenario_id }}</strong><br>
+            <span style="color: var(--text-muted); font-size: 0.8125rem;">{{ res.scenario_title }}</span>
+          </td>
+          <td>{{ res.category.value }}</td>
+          <td>
+            <span class="badge badge-sev-{{ res.severity.value }}">{{ res.severity.value }}</span>
+          </td>
+          <td>
+            <span class="badge badge-{{ res.security_status.value }}">{{ res.security_status.value }}</span>
+          </td>
+          <td>
+            {% if res.legitimate_task_success %}
+              <span class="val-pass">&#10003; Yes</span>
+            {% else %}
+              <span class="val-fail">&#10007; No</span>
+            {% endif %}
+          </td>
+          <td>
+            {% for finding in res.findings %}
+              <div style="margin-bottom: 0.5rem;">
+                <strong>{{ finding.title }}</strong>: {{ finding.description }}
+                {% if finding.evidence %}
+                  <div class="evidence-box">{% for ev in finding.evidence %}{{ ev }}
+{% endfor %}</div>
+                {% endif %}
+              </div>
+            {% endfor %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <footer>
+      Generated automatically by KalkanBench &bull; Safe simulated sandbox environment &bull; No external network dependencies
+    </footer>
+  </div>
+</body>
+</html>
