@@ -49,3 +49,14 @@ class AgentAdapter(ABC):
             context_documents=turn_input.context_documents,
         )
         return self.run(agent_input, broker)
+
+    def describe_config(self) -> dict[str, Any]:
+        """Returns agent configuration metadata for reproducibility reporting.
+
+        Subclasses should include identity, model, temperature, endpoints,
+        and template versions where applicable.
+        """
+        return {
+            "name": self.name,
+            "type": self.__class__.__name__,
+        }

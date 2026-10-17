@@ -197,6 +197,14 @@ class MockVulnerableAgent(AgentAdapter):
             metadata={"agent_class": "MockVulnerableAgent", "mode": "vulnerable_test_harness", "turn": turn_input.turn_index},
         )
 
+    def describe_config(self) -> dict[str, Any]:
+        """Returns agent configuration metadata for reproducibility reporting."""
+        return {
+            "name": self.name,
+            "type": self.__class__.__name__,
+            "mode": "deterministic_mock_vulnerable",
+        }
+
     def _generate_vulnerable_response(self, agent_input: AgentInput, secret_val: str | None) -> str:
         """Yields to the adversarial instructions in untrusted content."""
         untrusted = agent_input.untrusted_content or ""

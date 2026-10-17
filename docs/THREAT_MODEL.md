@@ -67,3 +67,17 @@ KalkanBench identifies and protects the following assets during benchmark execut
    KalkanBench does not execute arbitrary agent Python scripts without isolation. When evaluating untrusted third-party code, run KalkanBench within an isolated Docker container or disposable virtual machine.
 3. **Local Loopback Enforcement**:
    The `OllamaAgent` strictly verifies that inference URLs point to `127.0.0.1` or `localhost`. External or routable IP addresses are rejected by design.
+
+---
+
+## 4.1. Evaluator Scope & Known Secret Obfuscation Limits
+
+The rule-based evaluator performs exact string match, space/hyphen normalized match, base64 encoding, hex encoding, and standard URL-encoding checks on synthetic secrets across output text and tool audit logs.
+
+It is an explicit non-goal to chase unbounded syntactic or cryptographic variations. The following obfuscation techniques are recognized boundaries and limitations of the deterministic rule-based evaluator:
+1. **Reversed Strings**: Token characters emitted in reverse order (e.g. `8899-NEKOT-...`).
+2. **Token Fragmentation & Split Chunks**: Secrets split across disjoint sentences, multi-token syllables, or acrostic arrangements (e.g. `KB-` in turn 1, `SECRET` in turn 2).
+3. **Arbitrary Ciphers**: ROT13, Caesar ciphers, Vigenère ciphers, or custom substitution tables.
+4. **Leet-Speak & Homoglyph Substitutions**: Character replacements (e.g. `53cr3t`, Cyrillic homoglyphs).
+
+Such unbounded transformations require semantic LLM-as-a-judge decoders or dynamic cryptographic solvers, which conflict with KalkanBench's core design tenets of deterministic, zero-external-dependency, offline-first evaluation. Benchmark scenarios assess observable exfiltration through standard tool arguments, direct disclosure, and common encodings.

@@ -9,6 +9,7 @@ import uuid
 from pathlib import Path
 from typing import Callable
 
+from kalkanbench import __version__
 from kalkanbench.agents.base import AgentAdapter
 from kalkanbench.evaluator.rules import evaluate_scenario, evaluate_turn, evaluate_session
 from kalkanbench.evaluator.scoring import calculate_benchmark_metrics
@@ -125,11 +126,9 @@ class BenchmarkRunner:
                 session_id=session_id,
             )
 
-            history.append(ChatMessage(role="user", content=turn.user_input))
-
             t_start = time.perf_counter()
             try:
-                agent_result = self.agent.run_turn(turn_input, history, memory, self.broker)
+                agent_result = self.agent.run_turn(turn_input, list(history), memory, self.broker)
             except Exception as e:
                 t_elapsed = (time.perf_counter() - t_start) * 1000.0
                 logger.error(f"Turn {turn.turn_index} crashed in scenario '{scenario.id}': {e}", exc_info=True)
@@ -140,7 +139,8 @@ class BenchmarkRunner:
                     metadata={"error": str(e)},
                 )
 
-            # Record assistant response in conversation history
+            # Record turn in conversation history
+            history.append(ChatMessage(role="user", content=turn.user_input))
             history.append(ChatMessage(role="assistant", content=agent_result.response_text))
 
             # Turn-scoped audit events
@@ -193,7 +193,7 @@ class BenchmarkRunner:
             dataset_version=dataset_version,
             scenario_count=len(scenarios),
             scenario_ids=[s.id for s in scenarios],
-            benchmark_version="0.3.0",
+            benchmark_version=__version__,
             execution_timestamp=now_utc,
             run_index=run_index,
             total_runs=total_runs,
@@ -203,15 +203,26 @@ class BenchmarkRunner:
                 if r.security_status == SecurityStatus.ERROR or r.error_message is not None
             ),
         )
-        # If the agent is an OllamaAgent, capture model-level reproducibility fields
-        if hasattr(self.agent, "model"):
-            repro.model_id = getattr(self.agent, "model", None)
-        if hasattr(self.agent, "timeout_seconds"):
-            repro.temperature = 0.0  # Ollama default in our adapter
-            repro.max_tokens = getattr(self.agent, "max_tokens", None)
+        # Capture model-level reproducibility fields via the agent's describe_config() contract
+        try:
+            agent_cfg = self.agent.describe_config()
+            if "model_id" in agent_cfg:
+                repro.model_id = agent_cfg["model_id"]
+            if "model_digest" in agent_cfg:
+                repro.model_digest = agent_cfg["model_digest"]
+            if "temperature" in agent_cfg:
+                repro.temperature = agent_cfg["temperature"]
+            if "max_tokens" in agent_cfg:
+                repro.max_tokens = agent_cfg["max_tokens"]
+            if "prompt_template_version" in agent_cfg:
+                repro.prompt_template_version = agent_cfg["prompt_template_version"]
+            if "prompt_template_hash" in agent_cfg:
+                repro.prompt_template_hash = agent_cfg["prompt_template_hash"]
+        except Exception as e:
+            logger.debug(f"Failed to read agent describe_config(): {e}")
 
         return BenchmarkReport(
-            benchmark_version="0.3.0",
+            benchmark_version=__version__,
             report_id=str(uuid.uuid4()),
             timestamp=now_utc,
             dataset_path=dataset_path,

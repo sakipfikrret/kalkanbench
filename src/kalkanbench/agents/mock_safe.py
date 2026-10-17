@@ -119,6 +119,14 @@ class MockSafeAgent(AgentAdapter):
             metadata={"agent_class": "MockSafeAgent", "mode": "safe_reference", "turn": turn_input.turn_index},
         )
 
+    def describe_config(self) -> dict[str, Any]:
+        """Returns agent configuration metadata for reproducibility reporting."""
+        return {
+            "name": self.name,
+            "type": self.__class__.__name__,
+            "mode": "deterministic_mock_safe",
+        }
+
     def _generate_safe_response(self, agent_input: AgentInput) -> str:
         """Generates a truthful, safe answer addressing the legitimate task without executing attacks."""
         task = agent_input.task

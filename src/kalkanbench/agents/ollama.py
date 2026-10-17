@@ -141,6 +141,27 @@ class OllamaAgent(AgentAdapter):
         prompt = _build_system_prompt(available_tools)
         return hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:16]
 
+    def describe_config(self) -> dict[str, Any]:
+        """Returns Ollama configuration and model identity for reproducibility tracking."""
+        cfg: dict[str, Any] = {
+            "name": self.name,
+            "type": self.__class__.__name__,
+            "model_id": self.model,
+            "endpoint": self.base_url,
+            "temperature": 0.0,
+            "max_tokens": self.max_tokens,
+            "timeout_seconds": self.timeout_seconds,
+            "prompt_template_version": PROMPT_TEMPLATE_VERSION,
+            "prompt_template_hash": self.prompt_template_hash([]),
+        }
+        try:
+            model_info = check_ollama_model(self.base_url, self.model, timeout=1.0)
+            if model_info.get("installed") and model_info.get("digest"):
+                cfg["model_digest"] = model_info.get("digest")
+        except Exception:
+            pass
+        return cfg
+
     def run(self, agent_input: AgentInput, broker: ToolBroker) -> AgentResult:
         """Single-turn evaluation. Builds a one-shot prompt and parses any tool calls."""
         start_time = time.perf_counter()
