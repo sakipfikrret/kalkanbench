@@ -26,7 +26,7 @@ from kalkanbench import __version__
 from kalkanbench.agents import get_agent, list_available_agents
 from kalkanbench.config import KalkanConfig
 from kalkanbench.exceptions import KalkanBenchError, ScenarioValidationError
-from kalkanbench.models import SecurityStatus
+from kalkanbench.models import BenchmarkReport, RunVarianceRecord, SecurityStatus
 from kalkanbench.reporting import generate_reports
 from kalkanbench.runner import BenchmarkRunner
 from kalkanbench.scenario_loader import load_dataset, load_scenario_file
@@ -222,6 +222,17 @@ def run_command(
         "--fail-on-breach",
         help="Exit with non-zero code if any security breach or task failure is detected.",
     ),
+    runs: int = typer.Option(
+        1,
+        "--runs",
+        "-r",
+        help="Number of repeated runs to measure execution variance.",
+    ),
+    dataset_version: Optional[str] = typer.Option(
+        None,
+        "--dataset-version",
+        help="Dataset version identifier for reproducibility tracking (e.g. v1, v2, heldout).",
+    ),
     ollama_host: str = typer.Option(
         "http://127.0.0.1:11434",
         "--ollama-host",
@@ -254,9 +265,13 @@ def run_command(
         console.print(f"[bold red]Failed to load dataset:[/bold red] {e}")
         raise typer.Exit(code=1)
 
+    # Detect dataset version from directory name if not provided
+    d_version = dataset_version or dataset.name
+
     console.print(f"\n[bold cyan]Starting KalkanBench Benchmark[/bold cyan]")
-    console.print(f"  Dataset:      [white]{dataset}[/white] ({len(scenarios)} scenarios)")
+    console.print(f"  Dataset:      [white]{dataset}[/white] ({len(scenarios)} scenarios, version: {d_version})")
     console.print(f"  Agent:        [magenta]{agent.name}[/magenta] ({agent.description})")
+    console.print(f"  Runs:         [white]{runs}[/white]")
     console.print(f"  Output Dir:   [white]{output_dir}[/white]\n")
 
     runner = BenchmarkRunner(agent=agent)
@@ -273,7 +288,51 @@ def run_command(
             f"[dim]({res.category.value})[/dim]"
         )
 
-    report = runner.run_benchmark(scenarios, dataset_path=str(dataset), progress_callback=on_progress)
+    all_reports: list[BenchmarkReport] = []
+    for r_idx in range(1, runs + 1):
+        if runs > 1:
+            console.print(f"[bold yellow]--- Run {r_idx}/{runs} ---[/bold yellow]")
+        rep = runner.run_benchmark(
+            scenarios,
+            dataset_path=str(dataset),
+            dataset_version=d_version,
+            run_index=r_idx,
+            total_runs=runs,
+            progress_callback=on_progress,
+        )
+        all_reports.append(rep)
+
+    report = all_reports[-1]
+
+    # Compute variance across runs if repeated
+    if runs > 1:
+        metric_keys = [
+            "attack_resistance_rate",
+            "prohibited_action_attempt_rate",
+            "simulated_harmful_action_success_rate",
+            "safe_task_completion_rate",
+            "task_completion_under_attack_rate",
+            "legitimate_task_completion_rate",
+            "benign_false_refusal_rate",
+        ]
+        variance_records: list[RunVarianceRecord] = []
+        for mk in metric_keys:
+            vals = [float(getattr(r.metrics, mk)) for r in all_reports]
+            mean_val = sum(vals) / len(vals)
+            var = sum((v - mean_val) ** 2 for v in vals) / len(vals)
+            std_dev = var ** 0.5
+            variance_records.append(
+                RunVarianceRecord(
+                    metric_name=mk,
+                    values=vals,
+                    mean=round(mean_val, 2),
+                    std_dev=round(std_dev, 2),
+                    min_value=min(vals),
+                    max_value=max(vals),
+                    run_count=runs,
+                )
+            )
+        report.run_variance = variance_records
 
     # Output Summary Table
     m = report.metrics
@@ -285,8 +344,18 @@ def run_command(
     console.print(f"Prohibited Action Attempt Rate:    [bold {'green' if m.prohibited_action_attempt_rate == 0 else 'red'}]{m.prohibited_action_attempt_rate}%[/]")
     console.print(f"Simulated Harmful Action Success:  [bold {'green' if m.simulated_harmful_action_success_rate == 0 else 'red'}]{m.simulated_harmful_action_success_rate}%[/]")
     console.print(f"Legitimate Task Completion Rate:   [bold cyan]{m.legitimate_task_completion_rate}%[/]")
+    console.print(f"Safe Task Completion Rate (STCR):  [bold cyan]{m.safe_task_completion_rate}%[/]")
     console.print(f"Benign False Refusal Rate:         [bold {'green' if m.benign_false_refusal_rate == 0 else 'yellow'}]{m.benign_false_refusal_rate}%[/]")
     console.print(f"Severity-Weighted Score:           [bold {'green' if m.severity_weighted_score >= 80 else 'red'}]{m.severity_weighted_score}[/]")
+
+    if report.reproducibility:
+        console.print(f"Reproducibility Digest:            [dim]{report.reproducibility.prompt_template_hash or 'N/A'}[/dim]")
+
+    if report.run_variance:
+        console.print("\n[bold yellow]Multi-Run Variance (across " + str(runs) + " runs):[/bold yellow]")
+        for vr in report.run_variance:
+            console.print(f"  {vr.metric_name}: mean={vr.mean:.1f}%, std={vr.std_dev:.2f}, range=[{vr.min_value:.1f}%, {vr.max_value:.1f}%]")
+
     console.print("=" * 60 + "\n")
 
     # Generate Reports
@@ -302,6 +371,143 @@ def run_command(
 
 # Register benchmark as alias for run
 app.command("benchmark")(run_command)
+
+
+@app.command("check-ollama")
+def check_ollama_command(
+    host: str = typer.Option(
+        "http://127.0.0.1:11434",
+        "--host",
+        help="Ollama loopback base URL (strictly 127.0.0.1 or localhost).",
+    ),
+    model: Optional[str] = typer.Option(
+        None,
+        "--model",
+        "-m",
+        help="Optional model name to verify installation.",
+    ),
+) -> None:
+    """Checks whether local Ollama service is reachable and verifies model installation."""
+    from kalkanbench.agents.ollama import check_ollama_service, check_ollama_model
+
+    console.print(f"[bold blue]Checking Ollama service at:[/bold blue] {host}")
+    srv = check_ollama_service(host)
+    if not srv["available"]:
+        console.print(f"[bold red]Service unavailable:[/bold red] {srv.get('error')}")
+        raise typer.Exit(code=1)
+
+    console.print(f"[bold green][OK] Ollama service is available.[/bold green] Version: {srv.get('version', 'unknown')}")
+
+    if model:
+        console.print(f"[bold blue]Checking model:[/bold blue] {model}")
+        mdl = check_ollama_model(host, model)
+        if not mdl["installed"]:
+            console.print(f"[bold red]Model not installed:[/bold red] {mdl.get('error')}")
+            raise typer.Exit(code=1)
+        digest = mdl.get("digest", "")
+        size_mb = (mdl.get("size_bytes") or 0) / (1024 * 1024)
+        console.print(f"[bold green][OK] Model '{model}' is installed.[/bold green] (Digest: {digest[:16]}..., Size: {size_mb:.1f} MB)")
+
+
+@app.command("compare")
+def compare_command(
+    report1: Path = typer.Argument(
+        ...,
+        help="Path to baseline BenchmarkReport JSON file.",
+        exists=True,
+        file_okay=True,
+        dir_okay=False,
+        readable=True,
+    ),
+    report2: Path = typer.Argument(
+        ...,
+        help="Path to candidate BenchmarkReport JSON file.",
+        exists=True,
+        file_okay=True,
+        dir_okay=False,
+        readable=True,
+    ),
+    output_dir: Path = typer.Option(
+        Path("reports/comparison"),
+        "--output",
+        "-o",
+        help="Directory to write comparison reports.",
+    ),
+    format_opt: str = typer.Option(
+        "both",
+        "--format",
+        "-f",
+        help="Report format: 'both', 'json', or 'html'.",
+    ),
+    label1: str = typer.Option(
+        "Base",
+        "--label1",
+        help="Display label for report 1.",
+    ),
+    label2: str = typer.Option(
+        "Candidate",
+        "--label2",
+        help="Display label for report 2.",
+    ),
+) -> None:
+    """Generates a side-by-side comparison report between two benchmark executions."""
+    from kalkanbench.models import BenchmarkReport
+    from kalkanbench.reporting.compare_report import (
+        generate_comparison,
+        generate_comparison_html,
+        generate_comparison_json,
+    )
+
+    try:
+        base_rep = BenchmarkReport.model_validate_json(report1.read_text(encoding="utf-8"))
+    except Exception as e:
+        console.print(f"[bold red]Failed to load base report '{report1}':[/bold red] {e}")
+        raise typer.Exit(code=1)
+
+    try:
+        cand_rep = BenchmarkReport.model_validate_json(report2.read_text(encoding="utf-8"))
+    except Exception as e:
+        console.print(f"[bold red]Failed to load candidate report '{report2}':[/bold red] {e}")
+        raise typer.Exit(code=1)
+
+    comp = generate_comparison(base_rep, cand_rep, base_label=label1, candidate_label=label2)
+
+    console.print(f"\n[bold cyan]KalkanBench Model Comparison[/bold cyan]")
+    console.print(f"  {label1}: [white]{base_rep.agent_name}[/white] ({base_rep.dataset_path})")
+    console.print(f"  {label2}: [white]{cand_rep.agent_name}[/white] ({cand_rep.dataset_path})\n")
+
+    table = Table(title="Metrics Differential")
+    table.add_column("Metric", style="white")
+    table.add_column(f"{label1} ({base_rep.agent_name})", justify="right", style="cyan")
+    table.add_column(f"{label2} ({cand_rep.agent_name})", justify="right", style="magenta")
+    table.add_column("Delta", justify="right")
+
+    for m in comp.metrics:
+        delta_str = f"{m.delta:+.2f}" if m.delta != 0 else "0.00"
+        if m.delta == 0:
+            d_color = "dim"
+        elif (m.delta > 0 and m.higher_is_better) or (m.delta < 0 and not m.higher_is_better):
+            d_color = "bold green"
+        else:
+            d_color = "bold red"
+        table.add_row(m.display_name, f"{m.base_value:.2f}", f"{m.candidate_value:.2f}", f"[{d_color}]{delta_str}[/{d_color}]")
+
+    console.print(table)
+
+    if comp.summary_notes:
+        console.print("\n[bold yellow]Observations & Trade-Offs:[/bold yellow]")
+        for n in comp.summary_notes:
+            console.print(f"  • {n}")
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    if format_opt in ["both", "json"]:
+        j_path = output_dir / "comparison.json"
+        generate_comparison_json(comp, j_path)
+        console.print(f"[bold green]Comparison JSON saved:[/bold green] {j_path.resolve()}")
+    if format_opt in ["both", "html"]:
+        h_path = output_dir / "comparison.html"
+        generate_comparison_html(comp, h_path)
+        console.print(f"[bold green]Comparison HTML saved:[/bold green] {h_path.resolve()}")
 
 
 if __name__ == "__main__":

@@ -7,7 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.2.0] - 2026-10-17
+## [0.3.0] - 2026-10-17
+
+### Added
+- **Held-Out Evaluation Dataset (`datasets/heldout`, 12 scenarios: 6 TR / 6 EN)**:
+  - 11 single-turn and 1 multi-turn scenarios testing attack strategies and contexts not used to tune reference agents.
+  - Novel attack vectors: weather API indirect injection, few-shot framing direct injection, base64-encoded secret exfiltration, chained tool sequences, compliance auditor role impersonation, markdown formatting cloaking, persistent memory poisoning, and benign tasks.
+  - Dedicated documentation in `docs/HELDOUT_DATASET.md`.
+- **Reproducibility Metadata Schema (`ReproducibilityMetadata`, Report Schema v2.0)**:
+  - Captures execution context: model ID, digest, ollama version, temperature, seed, prompt template version/hash, dataset path/version, scenario IDs, and run variance.
+  - Support for repeated execution runs via `--runs N` with per-metric variance tracking (`RunVarianceRecord`).
+- **Benchmark Integrity Test Suite (`tests/unit/test_benchmark_integrity.py`)**:
+  - Verifies agent input isolation with zero ground-truth leakage.
+  - Enforces scenario order invariance, error result accounting in denominators, and multi-turn session counting.
+- **Model Comparison Capability (`kalkanbench compare`)**:
+  - Side-by-side differential comparison of two benchmark runs across all metrics, categories, and languages.
+  - Exports to formatted JSON and styled HTML with trade-off notes and preliminary warnings.
+- **Local Ollama Adapter Hardening & Multi-Turn Support**:
+  - Added `check_ollama_service` and `check_ollama_model` for safe, no-auto-download pre-flight verification.
+  - Multi-turn `run_turn()` preserving full conversation history and tool-result feedback loop.
+  - Added `check-ollama` CLI command.
+
+### Changed
+- Bumped benchmark report schema to `2.0` with `reproducibility` and `run_variance` fields.
+- Total test suite expanded to 112 automated unit, security, and integration tests.
 
 ### Added
 - **Stateful Multi-Turn Evaluation** (`datasets/v2`, 16 sessions: 8 TR / 8 EN):

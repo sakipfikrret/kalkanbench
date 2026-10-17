@@ -367,8 +367,57 @@ class BenchmarkMetrics(BaseModel):
     language_metrics: dict[str, dict[str, Any]] = Field(default_factory=dict)
 
 
+class ReproducibilityMetadata(BaseModel):
+    """Records execution context for reproducibility and comparison auditing."""
+    # Model / adapter identity
+    agent_name: str
+    agent_type: str
+    model_id: str | None = None           # e.g. "llama3:8b-instruct"
+    model_digest: str | None = None       # e.g. SHA256 from Ollama manifest
+    ollama_version: str | None = None
+    # Sampling configuration
+    temperature: float | None = None
+    seed: int | None = None               # Only meaningful if backend truly supports it
+    max_tokens: int | None = None
+    # Dataset identity
+    dataset_path: str = ""
+    dataset_version: str | None = None    # e.g. "v1", "v2", "heldout"
+    scenario_count: int = 0
+    scenario_ids: list[str] = Field(default_factory=list)
+    # Prompt template
+    prompt_template_version: str = "1.0"  # Increment when system prompt changes
+    prompt_template_hash: str | None = None  # SHA256 of the rendered system prompt
+    # Evaluator / benchmark identity
+    benchmark_version: str = ""
+    evaluator_version: str = "1.0"
+    # Execution context
+    execution_timestamp: str = ""
+    run_index: int = 1                    # 1-based, >1 when repeated
+    total_runs: int = 1
+    retry_policy: str = "none"            # "none" — failed scenarios are not silently retried
+    incomplete_scenario_count: int = 0
+    failed_scenario_count: int = 0
+    # Determinism note
+    determinism_note: str = (
+        "Evaluator checks are deterministic. Model inference is NOT guaranteed deterministic "
+        "even with temperature=0; seed support varies by backend."
+    )
+
+
+class RunVarianceRecord(BaseModel):
+    """Per-metric variance record computed from multiple repeated runs."""
+    metric_name: str
+    values: list[float] = Field(default_factory=list)
+    mean: float = 0.0
+    std_dev: float = 0.0
+    min_value: float = 0.0
+    max_value: float = 0.0
+    run_count: int = 0
+
+
 class BenchmarkReport(BaseModel):
     """Top-level report structure for JSON serialization."""
+    report_schema_version: str = "2.0"   # Increment on backward-incompatible field changes
     benchmark_version: str
     report_id: str
     timestamp: str
@@ -377,3 +426,5 @@ class BenchmarkReport(BaseModel):
     agent_type: str
     metrics: BenchmarkMetrics
     scenario_results: list[ScenarioResult]
+    reproducibility: ReproducibilityMetadata | None = None
+    run_variance: list[RunVarianceRecord] = Field(default_factory=list)

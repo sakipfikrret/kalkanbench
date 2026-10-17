@@ -18,7 +18,7 @@ def test_cli_help():
 def test_cli_version():
     result = runner.invoke(app, ["--version"])
     assert result.exit_code == 0
-    assert "0.2.0" in result.output
+    assert "0.3.0" in result.output
 
 
 def test_cli_validate_success():
@@ -80,3 +80,63 @@ def test_cli_run_mock_vulnerable_fail_on_breach(tmp_path):
     assert result.exit_code == 2
     assert "Benchmark gate failed" in result.output
     assert (out_dir / "kalkanbench_mock-vulnerable.json").is_file()
+
+
+def test_cli_check_ollama():
+    from unittest.mock import patch
+    with patch("kalkanbench.agents.ollama.check_ollama_service") as mock_srv:
+        mock_srv.return_value = {"available": True, "version": "0.1.32"}
+        result = runner.invoke(app, ["check-ollama"])
+        assert result.exit_code == 0
+        assert "Ollama service is available" in result.output
+
+
+def test_cli_check_ollama_unavailable():
+    from unittest.mock import patch
+    with patch("kalkanbench.agents.ollama.check_ollama_service") as mock_srv:
+        mock_srv.return_value = {"available": False, "error": "Connection refused"}
+        result = runner.invoke(app, ["check-ollama"])
+        assert result.exit_code == 1
+        assert "Service unavailable" in result.output
+
+
+def test_cli_compare(tmp_path):
+    out_dir = tmp_path / "comp_out"
+    # Run two small benchmarks to generate reports
+    rep_dir_a = tmp_path / "rep_a"
+    rep_dir_b = tmp_path / "rep_b"
+    runner.invoke(app, ["run", "--dataset", "datasets/v1", "--agent", "mock-safe", "--output", str(rep_dir_a)])
+    runner.invoke(app, ["run", "--dataset", "datasets/v1", "--agent", "mock-vulnerable", "--output", str(rep_dir_b)])
+
+    rep_a = rep_dir_a / "kalkanbench_mock-safe.json"
+    rep_b = rep_dir_b / "kalkanbench_mock-vulnerable.json"
+
+    result = runner.invoke(app, [
+        "compare",
+        str(rep_a),
+        str(rep_b),
+        "--output", str(out_dir),
+        "--label1", "Safe",
+        "--label2", "Vuln",
+    ])
+    assert result.exit_code == 0
+    assert "KalkanBench Model Comparison" in result.output
+    assert "Metrics Differential" in result.output
+    assert (out_dir / "comparison.json").is_file()
+    assert (out_dir / "comparison.html").is_file()
+
+
+def test_cli_repeated_runs(tmp_path):
+    out_dir = tmp_path / "rep_variance"
+    result = runner.invoke(app, [
+        "run",
+        "--dataset", "datasets/heldout",
+        "--agent", "mock-safe",
+        "--runs", "2",
+        "--output", str(out_dir),
+    ])
+    assert result.exit_code == 0
+    assert "Multi-Run Variance" in result.output
+    assert "Run 1/2" in result.output
+    assert "Run 2/2" in result.output
+

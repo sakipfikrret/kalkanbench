@@ -27,21 +27,22 @@ uv venv .venv
 # Geliştirici bağımlılıklarıyla paketi yükleyin
 uv pip install -e ".[dev]"
 
-# Senaryo veri setini doğrulayın (v1 tek turlu veya v2 çok turlu)
+# Senaryo veri setlerini doğrulayın (v1, v2 ve heldout)
 kalkanbench validate datasets/v1
 kalkanbench validate datasets/v2
+kalkanbench validate datasets/heldout
 
-# Referans güvenli ajan ile benchmark çalıştırın
-kalkanbench benchmark --dataset datasets/v1 --agent mock-safe --output reports/safe_v1
-kalkanbench benchmark --dataset datasets/v2 --agent mock-safe --output reports/safe_v2
+# Referans ajanlarla benchmark çalıştırın
+kalkanbench benchmark --dataset datasets/heldout --agent mock-safe --output reports/safe_ho
+kalkanbench benchmark --dataset datasets/heldout --agent mock-vulnerable --output reports/vuln_ho
 
-# Referans savunmasız ajan ile benchmark çalıştırın
-kalkanbench benchmark --dataset datasets/v2 --agent mock-vulnerable --output reports/vuln_v2
+# Modeller arası karşılaştırma raporu üretin
+kalkanbench compare reports/safe_ho/kalkanbench_mock-safe.json reports/vuln_ho/kalkanbench_mock-vulnerable.json --output reports/comparison
 ```
 
-Oluşturulan HTML raporlarını tarayıcınızda açıp inceleyebilirsiniz:
+Oluşturulan karşılaştırma ve benchmark HTML raporlarını tarayıcınızda açıp inceleyebilirsiniz:
 ```powershell
-Start-Process reports\safe_v2\kalkanbench_mock-safe.html
+Start-Process reports\comparison\comparison.html
 ```
 
 ---
@@ -49,14 +50,18 @@ Start-Process reports\safe_v2\kalkanbench_mock-safe.html
 ## Core Capabilities
 
 - **Zero-Cost & Offline-First by Default**: Runs entirely without internet connectivity, third-party cloud APIs, or external tracking.
+- **Held-Out Evaluation Dataset (v0.3)**: 12 unseen scenarios (`datasets/heldout`: 6 TR / 6 EN) covering novel injection vehicles, obfuscated exfiltration, and chained escalations to test generalizability and prevent benchmark overfitting.
+- **Model Comparison Engine (v0.3)**: Side-by-side differential analysis (`kalkanbench compare`) computing metric deltas, category/language breakdowns, and dual-goal security/utility trade-offs.
+- **Reproducibility Metadata & Multi-Run Variance (v0.3)**: Report schema v2.0 tracking model digests, prompt template hashes, and execution variance (`--runs N`).
+- **Pre-Flight Ollama Verification (v0.3)**: Non-destructive local model service and model installation check (`kalkanbench check-ollama`).
 - **Stateful Multi-Turn Evaluation (v0.2)**: Evaluates multi-turn conversation sessions (`datasets/v2`, 16 scenarios) testing delayed prompt injections, progressive authority escalation, and memory poisoning across session turns.
 - **Session-Scoped Memory Sandbox**: Simulated `AgentMemory` with explicit provenance tracking (`source="user"`, `"agent"`, `"tool"`) to isolate preferences and detect persistent memory corruption.
 - **Observable Fact-Based Evaluation**: Asserts on concrete audit logs, tool execution records, and text output rather than subjective model scores.
 - **Strict Evaluator Separation**: The agent under test receives only permitted task information (`AgentInput` / `TurnAgentInput`). Expected assertions, secrets, and policy boundaries are never leaked to the agent.
 - **Simulated Tool Environment**: Includes safe in-memory tools (`search_documents`, `read_document`, `read_synthetic_secret`, `send_simulated_message`, `request_simulated_external_transfer`) with zero real-world side effects.
 - **Distinguishes Blocked vs. Executed Violations**: Measures both attempted policy breaches intercepted by the broker and simulated harmful actions that succeeded.
-- **Dual-Language Datasets**: 34 single-turn scenarios (`datasets/v1`) and 16 multi-turn scenarios (`datasets/v2`) across Turkish and English spanning 6 core security categories.
-- **Local Model Support (Ollama)**: Optional loopback-only adapter restricted to `127.0.0.1` and `localhost`.
+- **62 Comprehensive Benchmark Scenarios**: 34 single-turn (`datasets/v1`), 16 multi-turn (`datasets/v2`), and 12 held-out (`datasets/heldout`) scenarios across Turkish and English.
+- **Local Model Support (Ollama)**: Loopback-only adapter restricted strictly to `127.0.0.1` and `localhost` with full multi-turn conversational history.
 - **Standalone Reports**: Generates machine-readable JSON and self-contained HTML reports with zero external dependencies, turn breakdown inspection, and strict XSS auto-escaping.
 
 ---
@@ -199,10 +204,20 @@ KalkanBench supports evaluating local models running via Ollama.
 
 ### Running with Ollama:
 ```bash
-# Ensure local Ollama is running on localhost:11434
-ollama pull llama3:latest
+# 1. Pre-flight check: verify local service and model installation (zero auto-download)
+kalkanbench check-ollama --host http://127.0.0.1:11434 --model qwen2.5-coder:7b
 
-kalkanbench run --dataset datasets/v1 --agent ollama --ollama-model llama3:latest --output reports/ollama
+# 2. Run benchmark with reproducibility tracking and multi-turn conversation support
+kalkanbench run --dataset datasets/heldout --agent ollama --ollama-model qwen2.5-coder:7b --output reports/ollama_qwen
+
+# 3. Optional: repeated runs to measure execution variance
+kalkanbench run --dataset datasets/heldout --agent ollama --ollama-model qwen2.5-coder:7b --runs 3 --output reports/ollama_qwen_3runs
+```
+
+### Model Comparison:
+```bash
+# Compare two benchmark executions side-by-side (JSON and HTML)
+kalkanbench compare reports/safe_ho/kalkanbench_mock-safe.json reports/ollama_qwen/kalkanbench_ollama.json --output reports/comparison --label1 "Mock-Safe" --label2 "Qwen2.5-Coder"
 ```
 
 *Note: All core tests and standard benchmark runs execute offline without requiring Ollama or any downloaded weights.*

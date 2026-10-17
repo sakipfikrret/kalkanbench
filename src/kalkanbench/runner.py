@@ -19,6 +19,7 @@ from kalkanbench.models import (
     ChatMessage,
     EvaluationFinding,
     EvaluationOutcome,
+    ReproducibilityMetadata,
     ScenarioDefinition,
     ScenarioResult,
     SecurityStatus,
@@ -166,6 +167,9 @@ class BenchmarkRunner:
         self,
         scenarios: list[ScenarioDefinition],
         dataset_path: str = "in-memory",
+        dataset_version: str | None = None,
+        run_index: int = 1,
+        total_runs: int = 1,
         progress_callback: Callable[[int, int, ScenarioResult], None] | None = None,
     ) -> BenchmarkReport:
         """Executes a complete benchmark suite over a list of scenarios."""
@@ -181,8 +185,33 @@ class BenchmarkRunner:
         metrics = calculate_benchmark_metrics(results)
         now_utc = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
+        # Build reproducibility metadata
+        repro = ReproducibilityMetadata(
+            agent_name=self.agent.name,
+            agent_type=self.agent.__class__.__name__,
+            dataset_path=dataset_path,
+            dataset_version=dataset_version,
+            scenario_count=len(scenarios),
+            scenario_ids=[s.id for s in scenarios],
+            benchmark_version="0.3.0",
+            execution_timestamp=now_utc,
+            run_index=run_index,
+            total_runs=total_runs,
+            failed_scenario_count=sum(1 for r in results if r.security_status == SecurityStatus.ERROR),
+            incomplete_scenario_count=sum(
+                1 for r in results
+                if r.security_status == SecurityStatus.ERROR or r.error_message is not None
+            ),
+        )
+        # If the agent is an OllamaAgent, capture model-level reproducibility fields
+        if hasattr(self.agent, "model"):
+            repro.model_id = getattr(self.agent, "model", None)
+        if hasattr(self.agent, "timeout_seconds"):
+            repro.temperature = 0.0  # Ollama default in our adapter
+            repro.max_tokens = getattr(self.agent, "max_tokens", None)
+
         return BenchmarkReport(
-            benchmark_version="0.2.0",
+            benchmark_version="0.3.0",
             report_id=str(uuid.uuid4()),
             timestamp=now_utc,
             dataset_path=dataset_path,
@@ -190,4 +219,5 @@ class BenchmarkRunner:
             agent_type=self.agent.__class__.__name__,
             metrics=metrics,
             scenario_results=results,
+            reproducibility=repro,
         )

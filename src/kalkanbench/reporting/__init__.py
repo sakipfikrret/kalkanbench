@@ -6,6 +6,12 @@ import re
 from pathlib import Path
 
 from kalkanbench.models import BenchmarkReport
+from kalkanbench.reporting.compare_report import (
+    ModelComparisonReport,
+    generate_comparison,
+    generate_comparison_html,
+    generate_comparison_json,
+)
 from kalkanbench.reporting.html_report import generate_html_report
 from kalkanbench.reporting.json_report import generate_json_report
 
@@ -39,4 +45,12 @@ def generate_reports(
     return generated
 
 
-__all__ = ["generate_json_report", "generate_html_report", "generate_reports"]
+__all__ = [
+    "generate_json_report",
+    "generate_html_report",
+    "generate_reports",
+    "generate_comparison",
+    "generate_comparison_json",
+    "generate_comparison_html",
+    "ModelComparisonReport",
+]
