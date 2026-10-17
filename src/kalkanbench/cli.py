@@ -26,7 +26,7 @@ from kalkanbench import __version__
 from kalkanbench.agents import get_agent, list_available_agents
 from kalkanbench.config import KalkanConfig
 from kalkanbench.exceptions import KalkanBenchError, ScenarioValidationError
-from kalkanbench.models import BenchmarkReport, RunVarianceRecord, SecurityStatus
+from kalkanbench.models import BenchmarkReport, RunVarianceRecord, ScenarioResult, SecurityStatus
 from kalkanbench.reporting import generate_reports
 from kalkanbench.runner import BenchmarkRunner
 from kalkanbench.scenario_loader import load_dataset, load_scenario_file
