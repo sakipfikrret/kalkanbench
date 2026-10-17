@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from kalkanbench.models import BenchmarkReport
@@ -20,7 +21,9 @@ def generate_reports(
     formats = formats or ["json", "html"]
     generated: dict[str, Path] = {}
 
-    agent_slug = report.agent_name.replace("/", "_").replace(":", "_")
+    # Strict allowlist: only alphanumerics, underscores, and hyphens.
+    # Prevents path traversal (e.g. "../../evil") regardless of OS path separator.
+    agent_slug = re.sub(r"[^a-zA-Z0-9_-]", "_", report.agent_name)
     base_name = f"kalkanbench_{agent_slug}"
 
     if "json" in formats:

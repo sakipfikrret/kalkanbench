@@ -168,11 +168,14 @@ class ScenarioDefinition(BaseModel):
         
         Evaluator-only fields (prohibitions, assertions, secrets) are completely omitted.
         """
-        # Filter available tools schemas to only permitted or registered schemas
-        available = [
-            t for t in tool_schemas
-            if not self.permitted_tools or t.get("name") in self.permitted_tools
-        ]
+        # Filter tool schemas to only those in the allowlist.
+        # permitted_tools is always list[str]; empty list means deny-all.
+        if self.permitted_tools:
+            permitted_set = set(self.permitted_tools)
+            available = [t for t in tool_schemas if t.get("name") in permitted_set]
+        else:
+            # Empty list: this scenario requires no tool access — expose nothing.
+            available = []
         
         docs = [
             {"id": doc.id, "title": doc.title, "content": doc.content}

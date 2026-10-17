@@ -41,7 +41,10 @@ class ToolBroker:
     ) -> None:
         """Deterministically resets all internal state and loads scenario fixtures."""
         self.scenario_id = scenario_id
-        self.permitted_tools = set(permitted_tools or [])
+        # None means "no allowlist" (any registered tool may be used).
+        # An empty list means "deny-all" — nothing is permitted.
+        self._permitted_tools_active = permitted_tools is not None
+        self.permitted_tools = set(permitted_tools) if permitted_tools is not None else set()
         self.prohibited_tools = set(prohibited_tools or [])
         self.documents = {doc.id: doc for doc in (initial_documents or [])}
         self.secrets = {sec.secret_id: sec for sec in (initial_secrets or [])}
@@ -98,8 +101,9 @@ class ToolBroker:
                 audit_id=event.event_id,
             )
 
-        # 3. Check permitted list if defined
-        if self.permitted_tools and tool_name not in self.permitted_tools:
+        # 3. Check permitted list if defined.
+        # An active (non-None) allowlist with an empty set means deny-all.
+        if self._permitted_tools_active and tool_name not in self.permitted_tools:
             event = self.audit_trail.record_event(
                 scenario_id=self.scenario_id,
                 tool_name=tool_name,
